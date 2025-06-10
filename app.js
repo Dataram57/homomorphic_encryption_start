@@ -45,6 +45,9 @@ const SEAL = require('node-seal');
         const context = seal.Context(encParms, true, seal.SecurityLevel.tc128);
         if (!context.parametersSet()) throw new Error('Failed to set parameters');
 
+        // Create batch encoder
+        const batchEncoder = seal.BatchEncoder(context);
+
         // Load Keys and Ciphertext
         const publicKey = seal.PublicKey();
         publicKey.load(context, clientData.publicKey);
@@ -58,12 +61,13 @@ const SEAL = require('node-seal');
         // Perform Computations
         const evaluator = seal.Evaluator(context);
         
-        // Compute (x + x) * x
-        let sum = evaluator.add(ciphertext, ciphertext);  // x + x
-        let product = evaluator.multiply(sum, ciphertext);  // (x + x) * x
-        //evaluator.relinearizeInplace(product, relinKeys);  // Critical: reduce ciphertext size
+        // Compute (x + 1) * x
+        let result
+        result = evaluator.addPlain(ciphertext, batchEncoder.encode(Int32Array.from([1])));
+        result = evaluator.multiply(result, ciphertext);  // (x + x) * x
+        evaluator.relinearize(result, relinKeys);  // Critical: reduce ciphertext size
         
-        return product;
+        return result;
     }
     
     // Wrapper function
@@ -95,7 +99,7 @@ const SEAL = require('node-seal');
 
     // Example usage
     const result = await Compute(5);
-    console.log('(x + x) * x =', result);  // Should output 50 (not 25, since (5+5)*5=50)
+    console.log('(x + 1) * x =', result);  // Should output 50 (not 25, since (5+5)*5=50)
 
     // Clean up
     [encParms, context, keyGenerator, publicKey, secretKey, relinKeys, 
