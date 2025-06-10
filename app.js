@@ -21,52 +21,83 @@ const SEAL = require('node-seal');
         throw new Error('Failed to set parameters');
     }
 
-    // Generate keys
+    // Generate keys (including relinearization keys)
     const keyGenerator = seal.KeyGenerator(context);
     const publicKey = keyGenerator.createPublicKey();
     const secretKey = keyGenerator.secretKey();
+    const relinKeys = keyGenerator.createRelinKeys();  // Needed for multiplication
 
     // Set up encryptor, evaluator, decryptor
     const encryptor = seal.Encryptor(context, publicKey);
     const evaluator = seal.Evaluator(context);
     const decryptor = seal.Decryptor(context, secretKey);
 
-    // Use BatchEncoder instead of IntegerEncoder
+    // Use BatchEncoder
     const batchEncoder = seal.BatchEncoder(context);
 
-    // Function to compute x² homomorphically
-    async function HomomorphicCompute(x){
-        let result;
-        result = evaluator.add(x, x);
-        result = evaluator.multiply(result, x);
-        return result;
+    // Function to compute (x + x) * x homomorphically
+    async function HomomorphicCompute(clientData) {
+        // Load encryption parameters
+        const encParms = seal.EncryptionParameters(seal.SchemeType.bfv);
+        encParms.load(clientData.encParms);
+
+        // Recreate context
+        const context = seal.Context(encParms, true, seal.SecurityLevel.tc128);
+        if (!context.parametersSet()) throw new Error('Failed to set parameters');
+
+        // Load Keys and Ciphertext
+        const publicKey = seal.PublicKey();
+        publicKey.load(context, clientData.publicKey);
+
+        const relinKeys = seal.RelinKeys();
+        relinKeys.load(context, clientData.relinKeys);
+
+        const ciphertext = seal.CipherText();
+        ciphertext.load(context, clientData.ciphertext);
+
+        // Perform Computations
+        const evaluator = seal.Evaluator(context);
+        
+        // Compute (x + x) * x
+        let sum = evaluator.add(ciphertext, ciphertext);  // x + x
+        let product = evaluator.multiply(sum, ciphertext);  // (x + x) * x
+        //evaluator.relinearizeInplace(product, relinKeys);  // Critical: reduce ciphertext size
+        
+        return product;
     }
     
-    //wrapper
+    // Wrapper function
     async function Compute(x) {
         // Encode the value (using BatchEncoder)
-        const plain = new Int32Array(1);
-        plain[0] = x;
-        const plainText = batchEncoder.encode(plain);
+        const plainText = batchEncoder.encode(Int32Array.from([x]));
         
         // Encrypt
-        const encrypted = encryptor.encrypt(plainText);
+        const ciphertext = encryptor.encrypt(plainText);
         
-        // Square the encrypted value
-        const encryptedSquare = await HomomorphicCompute(encrypted);
+        // Prepare data for computation
+        const exportData = {
+            encParms: encParms.save(),
+            publicKey: publicKey.save(),
+            relinKeys: relinKeys.save(),  // Now included
+            ciphertext: ciphertext.save(),
+        };
+
+        // Perform homomorphic computation
+        const encryptedResult = await HomomorphicCompute(exportData);
         
         // Decrypt
-        const plainResult = decryptor.decrypt(encryptedSquare);
+        const plainResult = decryptor.decrypt(encryptedResult);
         
         // Decode
         const resultArray = batchEncoder.decode(plainResult);
-        return resultArray[0];
+        return resultArray[0];  // Return first slot value
     }
 
     // Example usage
     const result = await Compute(5);
-    console.log('(x + x) * x =', result); // Should output 25
+    console.log('(x + x) * x =', result);  // Should output 50 (not 25, since (5+5)*5=50)
 
     // Clean up
-    [encParms, context, keyGenerator, publicKey, secretKey, encryptor, evaluator, decryptor, batchEncoder].forEach(obj => obj.delete());
+    [encParms, context, keyGenerator, publicKey, secretKey, relinKeys, 
+     encryptor, evaluator, decryptor, batchEncoder].forEach(obj => obj.delete());
 })();
