@@ -98,8 +98,10 @@ const SEAL = require('node-seal');
     }
 
     // Example usage
-    const result = await Compute(5);
-    console.log('(x + 1) * x =', result);  // Should output 50 (not 25, since (5+5)*5=50)
+    const x = 5;
+    const result = await Compute(x);
+    console.log('x = ' + x);
+    console.log('(x + 1) * x =', result);
 
     // Clean up
     [encParms, context, keyGenerator, publicKey, secretKey, relinKeys, 
