@@ -41,9 +41,13 @@ const SEAL = require('node-seal/allows_wasm_node_umd');
 
     // Use BatchEncoder
     const batchEncoder = seal.BatchEncoder(context);
+    
+    function checkNoise(msg, ct, decryptor) {
+        console.log(msg + ",", "Noise budget:", decryptor.invariantNoiseBudget(ct));
+    }
 
     // Function to compute (x + x) * x homomorphically
-    async function HomomorphicCompute(clientData) {
+    async function HomomorphicCompute1(clientData) {
         // Load encryption parameters
         const encParms = seal.EncryptionParameters(seal.SchemeType.bfv);
         encParms.load(clientData.encParms);
@@ -70,29 +74,62 @@ const SEAL = require('node-seal/allows_wasm_node_umd');
         
         // Compute (x + 1) * x
         let result
-        checkNoise("r = x", ciphertext, decryptor);
+        checkNoise("x", ciphertext, decryptor);
         result = evaluator.addPlain(ciphertext, batchEncoder.encode(Int32Array.from([1]))); //x+1
         checkNoise("r = r + 1", result, decryptor);
         result = evaluator.square(result); //x*x
         checkNoise("r = r ** 2", result, decryptor);
         result = evaluator.relinearize(result, relinKeys); // Reduce size
-        checkNoise("r = r", result, decryptor);
+        checkNoise("r", result, decryptor);
         result = evaluator.multiplyPlain(result, batchEncoder.encode(Int32Array.from([3]))); //x*x
         checkNoise("r = r * 3", result, decryptor);
         result = evaluator.multiply(result, ciphertext);  // (x + x) * x
         checkNoise("r = r * x", result, decryptor);
         result = evaluator.relinearize(result, relinKeys);  // Critical: reduce ciphertext size
-        checkNoise("r = r", result, decryptor);
+        checkNoise("r", result, decryptor);
+        //return
+        return result;
+    }
+
+    async function HomomorphicCompute2(clientData) {
+        // Load encryption parameters
+        const encParms = seal.EncryptionParameters(seal.SchemeType.bfv);
+        encParms.load(clientData.encParms);
+
+        // Recreate context
+        const context = seal.Context(encParms, true, seal.SecurityLevel.tc128);
+        if (!context.parametersSet()) throw new Error('Failed to set parameters');
+
+        // Create batch encoder
+        const batchEncoder = seal.BatchEncoder(context);
+
+        // Load Keys and Ciphertext
+        const publicKey = seal.PublicKey();
+        publicKey.load(context, clientData.publicKey);
+
+        const relinKeys = seal.RelinKeys();
+        relinKeys.load(context, clientData.relinKeys);
+
+        const ciphertext = seal.CipherText();
+        ciphertext.load(context, clientData.ciphertext);
+
+        // Perform Computations
+        const evaluator = seal.Evaluator(context);
+        
+        // Compute (x + 1) * x
+        let result
+        checkNoise("x", ciphertext, decryptor);
+        result = evaluator.multiplyPlain(ciphertext, batchEncoder.encode(Int32Array.from([3]))); //x+1
+        checkNoise("r = x * 3", result, decryptor);
+        result = evaluator.relinearize(result, relinKeys); // Reduce size
+        checkNoise("r", result, decryptor);
         //return
         return result;
     }
     
-    function checkNoise(msg, ct, decryptor) {
-        console.log(msg + ",", "Noise budget:", decryptor.invariantNoiseBudget(ct));
-    }
-
+    
     // Wrapper function
-    async function Compute(x) {
+    async function Compute(x, func_compute) {
         // Encode the value (using BatchEncoder)
         const plainText = batchEncoder.encode(Int32Array.from([x]));
         
@@ -108,7 +145,7 @@ const SEAL = require('node-seal/allows_wasm_node_umd');
         };
 
         // Perform homomorphic computation
-        const encryptedResult = await HomomorphicCompute(exportData);
+        const encryptedResult = await func_compute(exportData);
         
         // Decrypt
         const plainResult = decryptor.decrypt(encryptedResult);
@@ -120,9 +157,12 @@ const SEAL = require('node-seal/allows_wasm_node_umd');
 
     // Example usage
     const x = 5;
-    const result = await Compute(x);
     console.log('x = ' + x);
+    let result = await Compute(x, HomomorphicCompute1);
     console.log('3 * ((x + 1) ** 2) * x =', result);
+    console.log("================================================================")
+    result = await Compute(x, HomomorphicCompute2);
+    console.log('3 * x =', result);
 
     // Clean up
     [encParms, context, keyGenerator, publicKey, secretKey, relinKeys, 
