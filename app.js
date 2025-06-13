@@ -1,4 +1,11 @@
-const SEAL = require('node-seal');
+//proper lib.
+//const SEAL = require('node-seal');
+
+//node-seal with no transparency checks
+//history: https://github.com/s0l0ist/node-seal/issues/160
+const SEAL = require('node-seal/allows_wasm_node_umd');
+
+//async app
 (async () => {
     const seal = await SEAL();
 
@@ -66,7 +73,8 @@ const SEAL = require('node-seal');
         result = evaluator.addPlain(ciphertext, batchEncoder.encode(Int32Array.from([1])));
         result = evaluator.multiply(result, ciphertext);  // (x + x) * x
         evaluator.relinearize(result, relinKeys);  // Critical: reduce ciphertext size
-        
+
+        //return
         return result;
     }
     
