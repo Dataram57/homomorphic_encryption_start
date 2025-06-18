@@ -5,6 +5,8 @@
 npm i node-seal
 
 npm i paillier-bigint
+
+npm install she-wasm
 ```
 
 ### Running
@@ -12,6 +14,8 @@ npm i paillier-bigint
 node app-node-seal.js
 
 node app-paillier-bigint.js
+
+node app-she-wasm.js
 ```
 
 ### Resources
