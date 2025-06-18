@@ -3,11 +3,15 @@
 ### Requirements
 ```
 npm i node-seal
+
+npm i paillier-bigint
 ```
 
 ### Running
 ```
-node app.js
+node app-node-seal.js
+
+node app-paillier-bigint.js
 ```
 
 ### Resources
